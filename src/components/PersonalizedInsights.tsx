@@ -2,7 +2,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
 export function PersonalizedInsights() {
-  const insights = useQuery(api.dashboard.getUserInsights);
+  const insights = useQuery(api.dashboard.getInsights);
 
   if (!insights) {
     return (

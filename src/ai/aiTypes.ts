@@ -31,13 +31,10 @@ export interface AIRequest {
 }
 
 export interface AIResponse {
-  success: boolean;
-  message?: string;
-  response?: string;  // Backend returns 'response' field
+  message: string;
   suggestions?: string[];
   confidence?: number;
   source: 'granite' | 'fallback';
-  error?: string;
 }
 
 export interface GraniteConfig {
@@ -45,33 +42,13 @@ export interface GraniteConfig {
   maxTokens: number;
   temperature: number;
   topP: number;
-  topK: number;
   repetitionPenalty: number;
 }
 
 export const defaultGraniteConfig: GraniteConfig = {
-  modelId: 'granite3.2:2b',
+  modelId: 'ibm/granite-13b-chat-v2',
   maxTokens: 500,
   temperature: 0.7,
   topP: 0.9,
-  topK: 40,
   repetitionPenalty: 1.1
 };
-
-// Backend health check response
-export interface BackendHealthResponse {
-  status: 'ok' | 'error' | 'warning';
-  message: string;
-  model?: string;
-  available_models?: string[];
-}
-
-// Chat API request body
-export interface ChatAPIRequest {
-  message: string;
-  history?: Array<{
-    role: 'user' | 'assistant';
-    content: string;
-  }>;
-  context?: UserFinancialContext;
-}

@@ -24,68 +24,67 @@ export const getAIAdvice = action({
     }
 
     try {
-      // Make request to IBM Granite API
-      const graniteEndpoint = process.env.GRANITE_ENDPOINT || 'https://bam-api.res.ibm.com/v1/text/chat';
-      const graniteApiKey = process.env.GRANITE_API_KEY;
+      // Make request to Ollama (running locally)
+      const ollamaEndpoint = process.env.OLLAMA_ENDPOINT || 'http://localhost:11434/api/generate';
+      const ollamaModel = process.env.OLLAMA_MODEL || 'llama2'; // or mistral, codellama, etc.
 
-      if (!graniteApiKey) {
-        throw new Error("Granite API key not configured");
-      }
-
-      const response = await fetch(graniteEndpoint, {
+      const response = await fetch(ollamaEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${graniteApiKey}`,
         },
         body: JSON.stringify({
-          model_id: 'ibm/granite-13b-chat-v2',
-          messages: [
-            {
-              role: 'user',
-              content: `You are FinPal, the AI financial assistant for Finova. User asks: ${args.message}`
-            }
-          ],
-          parameters: {
-            max_new_tokens: 500,
+          model: ollamaModel,
+          prompt: `You are FinPal, the AI financial assistant for Finova. You help users with financial advice, budgeting, and money management.
+
+User asks: ${args.message}
+
+${args.includeContext && Object.keys(userContext).length > 0 ? `User's financial context: ${JSON.stringify(userContext)}` : ''}
+
+Provide helpful, actionable financial advice in a friendly tone.`,
+          stream: false,
+          options: {
             temperature: 0.7,
             top_p: 0.9,
+            max_tokens: 500,
             repetition_penalty: 1.1
           }
         })
       });
 
       if (!response.ok) {
-        throw new Error(`Granite API error: ${response.status}`);
+        throw new Error(`Ollama API error: ${response.status} - ${response.statusText}`);
       }
 
       const data = await response.json();
       
-      if (data.results && data.results.length > 0) {
+      if (data.response) {
         // Optional: Store the interaction for analytics
         // await ctx.runMutation(internal.dashboard.logAIInteraction, {
         //   userId,
         //   question: args.message,
-        //   response: data.results[0].generated_text,
+        //   response: data.response,
         //   timestamp: Date.now()
         // });
 
         return {
-          response: data.results[0].generated_text.trim(),
-          source: 'granite',
+          response: data.response.trim(),
+          source: 'ollama',
+          model: ollamaModel,
           timestamp: Date.now()
         };
       } else {
-        throw new Error('No response from Granite model');
+        throw new Error('No response from Ollama model');
       }
 
     } catch (error) {
-      console.error('Granite AI Error:', error);
+      console.error('Ollama AI Error:', error);
       
       // Fallback response
       return {
-        response: "I'm having trouble connecting to my AI brain right now. Please try again in a moment!",
+        response: "I'm having trouble connecting to my AI brain right now. Make sure Ollama is running locally (run 'ollama serve' in terminal). Please try again in a moment!",
         source: 'fallback',
+        error: error instanceof Error ? error.message : 'Unknown error',
         timestamp: Date.now()
       };
     }
@@ -97,36 +96,77 @@ export const checkAIHealth = action({
   args: {},
   handler: async (ctx) => {
     try {
-      const graniteEndpoint = process.env.GRANITE_ENDPOINT || 'https://bam-api.res.ibm.com/v1/text/chat';
-      const graniteApiKey = process.env.GRANITE_API_KEY;
+      const ollamaEndpoint = process.env.OLLAMA_ENDPOINT || 'http://localhost:11434/api/generate';
+      const ollamaModel = process.env.OLLAMA_MODEL || 'llama2';
 
-      if (!graniteApiKey) {
-        return { status: 'error', message: 'API key not configured' };
-      }
-
-      const response = await fetch(graniteEndpoint, {
+      const response = await fetch(ollamaEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${graniteApiKey}`,
         },
         body: JSON.stringify({
-          model_id: 'ibm/granite-13b-chat-v2',
-          messages: [{ role: 'user', content: 'Hello' }],
-          parameters: { max_new_tokens: 10 }
+          model: ollamaModel,
+          prompt: 'Hello',
+          stream: false,
+          options: { 
+            max_tokens: 10 
+          }
         })
       });
 
-      return {
-        status: response.ok ? 'healthy' : 'error',
-        message: response.ok ? 'AI service is running' : `HTTP ${response.status}`,
-        timestamp: Date.now()
-      };
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          status: 'healthy',
+          message: `Ollama is running with model: ${ollamaModel}`,
+          model: ollamaModel,
+          response: data.response || 'OK',
+          timestamp: Date.now()
+        };
+      } else {
+        return {
+          status: 'error',
+          message: `HTTP ${response.status}: ${response.statusText}`,
+          timestamp: Date.now()
+        };
+      }
 
     } catch (error) {
       return {
         status: 'error',
-        message: 'Connection failed',
+        message: 'Ollama connection failed. Make sure Ollama is running (ollama serve)',
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: Date.now()
+      };
+    }
+  },
+});
+
+// Optional: List available Ollama models
+export const listOllamaModels = action({
+  args: {},
+  handler: async (ctx) => {
+    try {
+      const response = await fetch('http://localhost:11434/api/tags', {
+        method: 'GET',
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch models: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      return {
+        models: data.models || [],
+        timestamp: Date.now()
+      };
+
+    } catch (error) {
+      console.error('Failed to list Ollama models:', error);
+      return {
+        models: [],
+        error: error instanceof Error ? error.message : 'Unknown error',
         timestamp: Date.now()
       };
     }

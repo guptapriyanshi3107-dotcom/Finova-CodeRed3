@@ -27,17 +27,17 @@ export function StatsCards() {
     },
     {
       title: "Monthly Expenses",
-      value: `₹${stats.monthlyExpenses.toLocaleString()}`,
+      value: `₹${(stats.monthlyExpenses || 0).toLocaleString()}`,
       icon: "💸",
       color: "text-red-600",
       bg: "bg-red-50",
     },
     {
       title: "Savings This Month",
-      value: `₹${stats.savings.toLocaleString()}`,
+      value: `₹${(stats.totalSavings || 0).toLocaleString()}`,
       icon: "🏦",
-      color: stats.savings >= 0 ? "text-green-600" : "text-red-600",
-      bg: stats.savings >= 0 ? "bg-green-50" : "bg-red-50",
+      color: (stats.totalSavings || 0) >= 0 ? "text-green-600" : "text-red-600",
+      bg: (stats.totalSavings || 0) >= 0 ? "bg-green-50" : "bg-red-50",
     },
     {
       title: "Financial Score",

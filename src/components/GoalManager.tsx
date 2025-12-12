@@ -1,209 +1,232 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
 
-const goalIcons = [
-  "💻", "🏠", "🚗", "✈️", "🎓", "💍", "🛡️", "📱", "🎯", "💰"
-];
-
 export function GoalManager() {
-  const [isOpen, setIsOpen] = useState(false);
-  const [formData, setFormData] = useState({
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newGoal, setNewGoal] = useState({
     name: "",
     targetAmount: "",
-    icon: "🎯",
-    targetDate: ""
+    targetDate: "",
+    icon: "🎯"
   });
 
   const createGoal = useMutation(api.dashboard.createGoal);
   const updateGoalSavings = useMutation(api.dashboard.updateGoalSavings);
-  const goals = useQuery(api.dashboard.getUserGoals);
+  const goals = useQuery(api.dashboard.getGoals);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleCreateGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.name || !formData.targetAmount || !formData.targetDate) {
-      toast.error("Please fill in all fields");
+    if (!newGoal.name || !newGoal.targetAmount || !newGoal.targetDate) {
+      toast.error("Please fill in all required fields");
       return;
     }
 
     try {
       await createGoal({
-        name: formData.name,
-        targetAmount: parseFloat(formData.targetAmount),
-        icon: formData.icon,
-        targetDate: formData.targetDate
+        name: newGoal.name,
+        targetAmount: parseFloat(newGoal.targetAmount),
+        targetDate: newGoal.targetDate,
+        icon: newGoal.icon,
       });
 
       toast.success("Goal created successfully!");
-      setFormData({ name: "", targetAmount: "", icon: "🎯", targetDate: "" });
-      setIsOpen(false);
+      setNewGoal({ name: "", targetAmount: "", targetDate: "", icon: "🎯" });
+      setShowCreateForm(false);
     } catch (error) {
       toast.error("Failed to create goal");
+      console.error(error);
     }
   };
 
-  const handleAddSavings = async (goalId: any, amount: number) => {
+  const handleAddSavings = async (goalId: string, amount: number) => {
     try {
-      await updateGoalSavings({ goalId, amount });
-      toast.success("Savings added to goal!");
+      await updateGoalSavings({ goalId: goalId as any, amount });
+      toast.success("Savings added successfully!");
     } catch (error) {
-      toast.error("Failed to update goal");
+      toast.error("Failed to add savings");
+      console.error(error);
     }
   };
+
+  const goalIcons = ["🎯", "🏠", "🚗", "✈️", "💻", "📱", "🎓", "💍", "🏖️", "🎸"];
+
+  if (!goals) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className="animate-pulse space-y-6">
+          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
+          <div className="grid gap-6">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-32 bg-gray-200 rounded-lg"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-gray-900">Financial Goals</h2>
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Financial Goals</h1>
+          <p className="text-gray-600">Track and manage your financial objectives</p>
+        </div>
         <button
-          onClick={() => setIsOpen(true)}
-          className="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 transition-colors flex items-center gap-2"
+          onClick={() => setShowCreateForm(true)}
+          className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors"
         >
-          <span>+</span>
-          New Goal
+          + Add Goal
         </button>
       </div>
 
-      {/* Goals List */}
-      <div className="space-y-6">
-        {goals?.map((goal, index) => {
+      {/* Goals Grid */}
+      <div className="grid gap-6">
+        {goals?.map((goal: any, index: number) => {
           const progress = (goal.savedAmount / goal.targetAmount) * 100;
           const daysLeft = Math.ceil(
             (new Date(goal.targetDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
           );
-          const monthlyNeeded = daysLeft > 0 ? (goal.targetAmount - goal.savedAmount) / (daysLeft / 30) : 0;
           
           return (
-            <div key={goal._id} className="border border-gray-200 rounded-lg p-4">
+            <div key={index} className="bg-white rounded-xl shadow-sm border p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <span className="text-3xl">{goal.icon}</span>
                   <div>
-                    <h3 className="font-semibold text-gray-900">{goal.name}</h3>
-                    <p className="text-sm text-gray-600">
+                    <h3 className="text-xl font-semibold text-gray-900">{goal.name}</h3>
+                    <p className="text-gray-600">
                       ₹{goal.savedAmount.toLocaleString()} of ₹{goal.targetAmount.toLocaleString()}
                     </p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-medium text-gray-900">{Math.round(progress)}%</p>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-2xl font-bold text-teal-600">{Math.round(progress)}%</p>
+                  <p className="text-sm text-gray-500">
                     {daysLeft > 0 ? `${daysLeft} days left` : "Overdue"}
                   </p>
                 </div>
               </div>
 
               {/* Progress Bar */}
-              <div className="w-full bg-gray-200 rounded-full h-3 mb-4">
-                <div
-                  className="bg-teal-600 h-3 rounded-full transition-all"
-                  style={{ width: `${Math.min(progress, 100)}%` }}
-                ></div>
-              </div>
-
-              {/* Goal Stats */}
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="bg-blue-50 p-3 rounded-lg">
-                  <p className="text-xs text-blue-600 font-medium">Monthly Needed</p>
-                  <p className="text-lg font-bold text-blue-700">
-                    ₹{monthlyNeeded > 0 ? Math.ceil(monthlyNeeded).toLocaleString() : 0}
-                  </p>
-                </div>
-                <div className="bg-green-50 p-3 rounded-lg">
-                  <p className="text-xs text-green-600 font-medium">Target Date</p>
-                  <p className="text-lg font-bold text-green-700">
-                    {new Date(goal.targetDate).toLocaleDateString()}
-                  </p>
+              <div className="mb-4">
+                <div className="w-full bg-gray-200 rounded-full h-3">
+                  <div
+                    className="bg-teal-600 h-3 rounded-full transition-all"
+                    style={{ width: `${Math.min(progress, 100)}%` }}
+                  ></div>
                 </div>
               </div>
 
-              {/* Quick Add Savings */}
-              <div className="flex gap-2">
-                {[500, 1000, 2000].map((amount) => (
-                  <button
-                    key={amount}
-                    onClick={() => handleAddSavings(goal._id, amount)}
-                    className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-3 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    +₹{amount}
-                  </button>
-                ))}
+              {/* Actions */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleAddSavings(goal._id, 1000)}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                >
+                  Add ₹1,000
+                </button>
+                <button
+                  onClick={() => handleAddSavings(goal._id, 5000)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                >
+                  Add ₹5,000
+                </button>
+                <button
+                  onClick={() => {
+                    const amount = prompt("Enter amount to add:");
+                    if (amount && !isNaN(parseFloat(amount))) {
+                      handleAddSavings(goal._id, parseFloat(amount));
+                    }
+                  }}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+                >
+                  Custom Amount
+                </button>
               </div>
             </div>
           );
         })}
 
-        {goals?.length === 0 && (
-          <div className="text-center py-8">
+        {goals.length === 0 && (
+          <div className="text-center py-12 bg-white rounded-xl shadow-sm border">
             <div className="text-6xl mb-4">🎯</div>
-            <p className="text-gray-500 mb-4">No goals set yet</p>
-            <p className="text-sm text-gray-400 mb-4">
-              Set your first financial goal and start saving with purpose!
-            </p>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">No Goals Yet</h3>
+            <p className="text-gray-600 mb-6">Start by creating your first financial goal</p>
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors"
+            >
+              Create Your First Goal
+            </button>
           </div>
         )}
       </div>
 
       {/* Create Goal Modal */}
-      {isOpen && (
+      {showCreateForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-900">Create New Goal</h3>
-              <button
-                onClick={() => setIsOpen(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Goal Name */}
+          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Create New Goal</h2>
+            
+            <form onSubmit={handleCreateGoal} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Goal Name
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Goal Name *
                 </label>
                 <input
                   type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  value={newGoal.name}
+                  onChange={(e) => setNewGoal(prev => ({ ...prev, name: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                  placeholder="e.g., New Laptop, Emergency Fund"
+                  placeholder="e.g., Emergency Fund"
                   required
                 />
               </div>
 
-              {/* Target Amount */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Target Amount (₹)
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Target Amount (₹) *
                 </label>
                 <input
                   type="number"
-                  value={formData.targetAmount}
-                  onChange={(e) => setFormData(prev => ({ ...prev, targetAmount: e.target.value }))}
+                  value={newGoal.targetAmount}
+                  onChange={(e) => setNewGoal(prev => ({ ...prev, targetAmount: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                  placeholder="50000"
+                  placeholder="e.g., 100000"
                   required
                 />
               </div>
 
-              {/* Icon Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Choose Icon
+                  Target Date *
+                </label>
+                <input
+                  type="date"
+                  value={newGoal.targetDate}
+                  onChange={(e) => setNewGoal(prev => ({ ...prev, targetDate: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Icon
                 </label>
                 <div className="grid grid-cols-5 gap-2">
                   {goalIcons.map((icon) => (
                     <button
                       key={icon}
                       type="button"
-                      onClick={() => setFormData(prev => ({ ...prev, icon }))}
-                      className={`p-3 text-2xl rounded-lg border-2 transition-colors ${
-                        formData.icon === icon
+                      onClick={() => setNewGoal(prev => ({ ...prev, icon }))}
+                      className={`p-2 text-2xl rounded-lg border-2 transition-colors ${
+                        newGoal.icon === icon
                           ? "border-teal-500 bg-teal-50"
                           : "border-gray-200 hover:border-gray-300"
                       }`}
@@ -214,28 +237,21 @@ export function GoalManager() {
                 </div>
               </div>
 
-              {/* Target Date */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Target Date
-                </label>
-                <input
-                  type="date"
-                  value={formData.targetDate}
-                  onChange={(e) => setFormData(prev => ({ ...prev, targetDate: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                  min={new Date().toISOString().split('T')[0]}
-                  required
-                />
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateForm(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors"
+                >
+                  Create Goal
+                </button>
               </div>
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                className="w-full bg-teal-600 text-white py-2 px-4 rounded-lg hover:bg-teal-700 transition-colors font-medium"
-              >
-                Create Goal
-              </button>
             </form>
           </div>
         </div>

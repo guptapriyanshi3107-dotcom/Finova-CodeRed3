@@ -1,41 +1,174 @@
-import { query, mutation, action } from "./_generated/server";
+import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
+// Create or update user profile
+export const createUserProfile = mutation({
+  args: {
+    name: v.string(),
+    persona: v.union(v.literal("student"), v.literal("professional")),
+    monthlyIncome: v.number(),
+    monthlyExpenses: v.optional(v.number()),
+    savings: v.optional(v.number()),
+    existingDebts: v.optional(v.number()),
+    financialGoals: v.optional(v.string()),
+    age: v.optional(v.number()),
+    financialScore: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    // Check if profile exists
+    const existingProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    const profileData = {
+      userId,
+      name: args.name,
+      persona: args.persona,
+      monthlyIncome: args.monthlyIncome,
+      monthlyExpenses: args.monthlyExpenses || 0,
+      savings: args.savings || 0,
+      existingDebts: args.existingDebts || 0,
+      financialGoals: args.financialGoals || "",
+      age: args.age || 25,
+      financialScore: args.financialScore || 0,
+      onboardingCompleted: true,
+    };
+
+    if (existingProfile) {
+      await ctx.db.patch(existingProfile._id, profileData);
+      
+      // Update survival analysis
+      await updateSurvivalAnalysis(ctx, userId, args.monthlyExpenses || 0, args.savings || 0);
+      
+      return existingProfile._id;
+    } else {
+      const profileId = await ctx.db.insert("userProfiles", profileData);
+      
+      // Create survival analysis
+      await updateSurvivalAnalysis(ctx, userId, args.monthlyExpenses || 0, args.savings || 0);
+      
+      return profileId;
+    }
+  },
+});
+
+// Helper function to update survival analysis
+async function updateSurvivalAnalysis(ctx: any, userId: any, monthlyExpenses: number, savings: number) {
+  try {
+    const survivalMonths = monthlyExpenses > 0 ? savings / monthlyExpenses : 0;
+    const survivalScore = Math.min(100, Math.round(survivalMonths * 16.67)); // 6 months = 100 points
+    
+    let riskLevel: "low" | "medium" | "high" = "high";
+    if (survivalMonths >= 6) riskLevel = "low";
+    else if (survivalMonths >= 3) riskLevel = "medium";
+
+    const existingSurvival = await ctx.db
+      .query("survivalAnalysis")
+      .withIndex("by_user", (q: any) => q.eq("userId", userId))
+      .first();
+
+    const survivalData = {
+      userId,
+      survivalMonths: Math.round(survivalMonths * 10) / 10,
+      survivalScore,
+      riskLevel,
+      monthlyBurnRate: monthlyExpenses,
+      liquidSavings: savings,
+      lastCalculated: Date.now(),
+    };
+
+    if (existingSurvival) {
+      await ctx.db.patch(existingSurvival._id, survivalData);
+    } else {
+      await ctx.db.insert("survivalAnalysis", survivalData);
+    }
+  } catch (error) {
+    console.error("Error updating survival analysis:", error);
+    // Don't throw error to prevent profile creation from failing
+  }
+}
+
+// Get user profile
 export const getUserProfile = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) return null;
 
-    const profile = await ctx.db
+    return await ctx.db
       .query("userProfiles")
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .first();
-
-    return profile;
   },
 });
 
-export const createUserProfile = mutation({
-  args: {
-    name: v.string(),
-    persona: v.union(v.literal("student"), v.literal("professional")),
-    monthlyIncome: v.number(),
+// Get survival analysis
+export const getSurvivalAnalysis = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+
+    return await ctx.db
+      .query("survivalAnalysis")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
   },
-  handler: async (ctx, args) => {
+});
+
+// Initialize sample data for demo
+export const initializeSampleData = mutation({
+  args: {},
+  handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
-    return await ctx.db.insert("userProfiles", {
-      userId,
-      name: args.name,
-      persona: args.persona,
-      monthlyIncome: args.monthlyIncome,
-    });
+    // Sample transactions
+    const sampleTransactions = [
+      { amount: 50000, category: "Salary", type: "income" as const, description: "Monthly Salary", date: "2024-01-01" },
+      { amount: 15000, category: "Rent", type: "expense" as const, description: "Monthly Rent", date: "2024-01-02" },
+      { amount: 5000, category: "Food", type: "expense" as const, description: "Groceries", date: "2024-01-03" },
+      { amount: 3000, category: "Transport", type: "expense" as const, description: "Fuel & Transport", date: "2024-01-04" },
+      { amount: 2000, category: "Entertainment", type: "expense" as const, description: "Movies & Dining", date: "2024-01-05" },
+    ];
+
+    // Sample goals
+    const sampleGoals = [
+      { name: "Emergency Fund", targetAmount: 300000, savedAmount: 150000, icon: "🛡️", targetDate: "2024-12-31" },
+      { name: "Vacation", targetAmount: 100000, savedAmount: 25000, icon: "✈️", targetDate: "2024-06-30" },
+      { name: "New Laptop", targetAmount: 80000, savedAmount: 60000, icon: "💻", targetDate: "2024-03-31" },
+    ];
+
+    // Sample insights
+    const sampleInsights = [
+      { type: "success" as const, message: "Great job! You saved 30% of your income this month.", date: "2024-01-15" },
+      { type: "warning" as const, message: "Your entertainment spending increased by 20% this month.", date: "2024-01-14" },
+      { type: "tip" as const, message: "Consider setting up an SIP to automate your investments.", date: "2024-01-13" },
+    ];
+
+    // Insert sample data
+    for (const transaction of sampleTransactions) {
+      await ctx.db.insert("transactions", { userId, ...transaction });
+    }
+
+    for (const goal of sampleGoals) {
+      await ctx.db.insert("goals", { userId, ...goal });
+    }
+
+    for (const insight of sampleInsights) {
+      await ctx.db.insert("insights", { userId, ...insight });
+    }
+
+    return { message: "Sample data initialized successfully" };
   },
 });
 
+// Get dashboard stats
 export const getDashboardStats = query({
   args: {},
   handler: async (ctx) => {
@@ -47,98 +180,45 @@ export const getDashboardStats = query({
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .first();
 
-    if (!profile) return null;
-
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    
-    // Get current month transactions
     const transactions = await ctx.db
       .query("transactions")
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .collect();
 
-    const currentMonthTransactions = transactions.filter(t => 
-      t.date.startsWith(currentMonth)
-    );
+    const goals = await ctx.db
+      .query("goals")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
 
-    const monthlyExpenses = currentMonthTransactions
+    if (!profile) return null;
+
+    const totalIncome = transactions
+      .filter(t => t.type === "income")
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const totalExpenses = transactions
       .filter(t => t.type === "expense")
       .reduce((sum, t) => sum + t.amount, 0);
 
-    const monthlyIncome = profile.monthlyIncome;
-    const savings = monthlyIncome - monthlyExpenses;
-    const financialScore = Math.min(100, Math.max(0, 50 + (savings / monthlyIncome) * 50));
+    const totalSaved = goals.reduce((sum, g) => sum + g.savedAmount, 0);
+    const totalGoalTarget = goals.reduce((sum, g) => sum + g.targetAmount, 0);
 
     return {
-      monthlyIncome,
-      monthlyExpenses,
-      savings,
-      financialScore: Math.round(financialScore),
+      monthlyIncome: profile.monthlyIncome,
+      monthlyExpenses: profile.monthlyExpenses,
+      totalSavings: profile.savings,
+      totalIncome,
+      totalExpenses,
+      netSavings: totalIncome - totalExpenses,
+      totalSaved,
+      totalGoalTarget,
+      goalsProgress: totalGoalTarget > 0 ? Math.round((totalSaved / totalGoalTarget) * 100) : 0,
+      financialScore: profile.financialScore || 0,
     };
   },
 });
 
-export const getSpendingBreakdown = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return [];
-
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    
-    const transactions = await ctx.db
-      .query("transactions")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
-
-    const currentMonthExpenses = transactions.filter(t => 
-      t.type === "expense" && t.date.startsWith(currentMonth)
-    );
-
-    const categoryTotals: Record<string, number> = {};
-    currentMonthExpenses.forEach(t => {
-      categoryTotals[t.category] = (categoryTotals[t.category] || 0) + t.amount;
-    });
-
-    const totalExpenses = Object.values(categoryTotals).reduce((sum, amount) => sum + amount, 0);
-
-    return Object.entries(categoryTotals)
-      .map(([category, amount]) => ({
-        category,
-        amount,
-        percentage: totalExpenses > 0 ? Math.round((amount / totalExpenses) * 100) : 0,
-      }))
-      .sort((a, b) => b.amount - a.amount);
-  },
-});
-
-export const getUserGoals = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return [];
-
-    return await ctx.db
-      .query("goals")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
-  },
-});
-
-export const getUserInsights = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return [];
-
-    return await ctx.db
-      .query("insights")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .order("desc")
-      .take(5);
-  },
-});
-
+// Get recent transactions
 export const getRecentTransactions = query({
   args: {},
   handler: async (ctx) => {
@@ -153,6 +233,36 @@ export const getRecentTransactions = query({
   },
 });
 
+// Get goals
+export const getGoals = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
+
+    return await ctx.db
+      .query("goals")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+  },
+});
+
+// Get insights
+export const getInsights = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
+
+    return await ctx.db
+      .query("insights")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .order("desc")
+      .take(5);
+  },
+});
+
+// Add transaction
 export const addTransaction = mutation({
   args: {
     amount: v.number(),
@@ -164,41 +274,21 @@ export const addTransaction = mutation({
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
-    const transactionId = await ctx.db.insert("transactions", {
+    return await ctx.db.insert("transactions", {
       userId,
-      amount: args.amount,
-      category: args.category,
-      type: args.type,
-      description: args.description,
+      ...args,
       date: new Date().toISOString().split('T')[0],
     });
-
-    // Update budget spending if it's an expense
-    if (args.type === "expense") {
-      const currentMonth = new Date().toISOString().slice(0, 7);
-      const budget = await ctx.db
-        .query("budgets")
-        .withIndex("by_user_month", (q) => q.eq("userId", userId).eq("month", currentMonth))
-        .filter((q) => q.eq(q.field("category"), args.category))
-        .first();
-
-      if (budget) {
-        await ctx.db.patch(budget._id, {
-          spent: budget.spent + args.amount,
-        });
-      }
-    }
-
-    return transactionId;
   },
 });
 
+// Create goal
 export const createGoal = mutation({
   args: {
     name: v.string(),
     targetAmount: v.number(),
-    icon: v.string(),
     targetDate: v.string(),
+    icon: v.string(),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -206,15 +296,13 @@ export const createGoal = mutation({
 
     return await ctx.db.insert("goals", {
       userId,
-      name: args.name,
-      targetAmount: args.targetAmount,
+      ...args,
       savedAmount: 0,
-      icon: args.icon,
-      targetDate: args.targetDate,
     });
   },
 });
 
+// Update goal savings
 export const updateGoalSavings = mutation({
   args: {
     goalId: v.id("goals"),
@@ -226,17 +314,38 @@ export const updateGoalSavings = mutation({
 
     const goal = await ctx.db.get(args.goalId);
     if (!goal || goal.userId !== userId) {
-      throw new Error("Goal not found or unauthorized");
+      throw new Error("Goal not found");
     }
 
     await ctx.db.patch(args.goalId, {
       savedAmount: goal.savedAmount + args.amount,
     });
-
-    return null;
   },
 });
 
+// Create budget
+export const createBudget = mutation({
+  args: {
+    category: v.string(),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const currentMonth = new Date().toISOString().slice(0, 7);
+
+    return await ctx.db.insert("budgets", {
+      userId,
+      category: args.category,
+      limit: args.limit,
+      spent: 0,
+      month: currentMonth,
+    });
+  },
+});
+
+// Get user budgets
 export const getUserBudgets = query({
   args: {},
   handler: async (ctx) => {
@@ -252,176 +361,28 @@ export const getUserBudgets = query({
   },
 });
 
-export const createBudget = mutation({
-  args: {
-    category: v.string(),
-    limit: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
-    const currentMonth = new Date().toISOString().slice(0, 7);
-
-    // Check if budget already exists for this category and month
-    const existingBudget = await ctx.db
-      .query("budgets")
-      .withIndex("by_user_month", (q) => q.eq("userId", userId).eq("month", currentMonth))
-      .filter((q) => q.eq(q.field("category"), args.category))
-      .first();
-
-    if (existingBudget) {
-      // Update existing budget
-      await ctx.db.patch(existingBudget._id, {
-        limit: args.limit,
-      });
-      return existingBudget._id;
-    } else {
-      // Calculate current spending for this category
-      const transactions = await ctx.db
-        .query("transactions")
-        .withIndex("by_user", (q) => q.eq("userId", userId))
-        .collect();
-
-      const currentMonthSpending = transactions
-        .filter(t => t.type === "expense" && t.category === args.category && t.date.startsWith(currentMonth))
-        .reduce((sum, t) => sum + t.amount, 0);
-
-      // Create new budget
-      return await ctx.db.insert("budgets", {
-        userId,
-        category: args.category,
-        limit: args.limit,
-        spent: currentMonthSpending,
-        month: currentMonth,
-      });
-    }
-  },
-});
-
-export const getAIResponse = action({
-  args: {
-    message: v.string(),
-  },
-  handler: async (ctx, args) => {
-    // Simple AI responses for demo - in production, you'd use OpenAI API
-    const responses = {
-      "save": "Here are some great ways to save money: 1) Track your expenses daily, 2) Set up automatic transfers to savings, 3) Use the 50/30/20 rule (50% needs, 30% wants, 20% savings), 4) Cook at home more often, 5) Cancel unused subscriptions.",
-      "budget": "Creating a budget is simple! Start with the 50/30/20 rule: 50% for needs (rent, groceries, utilities), 30% for wants (entertainment, dining out), and 20% for savings and debt repayment. Track your spending for a month to see where your money goes, then adjust accordingly.",
-      "emergency": "A good emergency fund should cover 3-6 months of your essential expenses. Start small - even ₹500/month adds up! Keep it in a separate high-yield savings account that's easily accessible but not too tempting to spend from.",
-      "invest": "If you have high-interest debt (>8% interest), pay that off first. Otherwise, start investing early! Consider SIPs in mutual funds, start with ₹1000/month. The power of compounding works best with time.",
-      "income": "Passive income ideas: 1) Invest in dividend-paying stocks, 2) Create digital products or courses, 3) Rent out a room, 4) Start a blog or YouTube channel, 5) Invest in REITs, 6) Build an emergency fund that earns interest."
-    };
-
-    const message = args.message.toLowerCase();
-    
-    for (const [key, response] of Object.entries(responses)) {
-      if (message.includes(key)) {
-        return response;
-      }
-    }
-
-    // Default response
-    return "That's a great financial question! Based on your current spending patterns, I'd recommend focusing on tracking your expenses first. This will give you insights into where you can optimize. Would you like me to help you create a budget or set up a savings goal?";
-  },
-});
-
-// Initialize sample data for new users
-export const initializeSampleData = mutation({
+// Get spending breakdown
+export const getSpendingBreakdown = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) return [];
 
-    // Check if user already has data
-    const existingProfile = await ctx.db
-      .query("userProfiles")
+    const transactions = await ctx.db
+      .query("transactions")
       .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
+      .filter((q) => q.eq(q.field("type"), "expense"))
+      .collect();
 
-    if (existingProfile) return;
+    const breakdown = transactions.reduce((acc: Record<string, number>, transaction) => {
+      acc[transaction.category] = (acc[transaction.category] || 0) + transaction.amount;
+      return acc;
+    }, {});
 
-    // Create sample profile
-    await ctx.db.insert("userProfiles", {
-      userId,
-      name: "Kshitiz",
-      persona: "professional",
-      monthlyIncome: 45000,
-    });
-
-    // Add sample transactions
-    const sampleTransactions = [
-      { amount: 1200, category: "Food", type: "expense" as const, description: "Groceries" },
-      { amount: 800, category: "Travel", type: "expense" as const, description: "Metro card" },
-      { amount: 2500, category: "Shopping", type: "expense" as const, description: "Clothes" },
-      { amount: 1500, category: "Bills", type: "expense" as const, description: "Electricity" },
-      { amount: 45000, category: "Salary", type: "income" as const, description: "Monthly salary" },
-    ];
-
-    for (const transaction of sampleTransactions) {
-      await ctx.db.insert("transactions", {
-        userId,
-        ...transaction,
-        date: new Date().toISOString().split('T')[0],
-      });
-    }
-
-    // Add sample goals
-    await ctx.db.insert("goals", {
-      userId,
-      name: "Laptop Goal",
-      targetAmount: 30000,
-      savedAmount: 12000,
-      icon: "💻",
-      targetDate: "2025-06-01",
-    });
-
-    await ctx.db.insert("goals", {
-      userId,
-      name: "Emergency Fund",
-      targetAmount: 50000,
-      savedAmount: 8000,
-      icon: "🛡️",
-      targetDate: "2025-12-31",
-    });
-
-    // Add sample insights
-    await ctx.db.insert("insights", {
-      userId,
-      type: "success",
-      message: "You spent 12% less on food this month — great job!",
-      date: new Date().toISOString().split('T')[0],
-    });
-
-    await ctx.db.insert("insights", {
-      userId,
-      type: "warning",
-      message: "You crossed your shopping limit by ₹1,200 — consider reducing next month.",
-      date: new Date().toISOString().split('T')[0],
-    });
-
-    await ctx.db.insert("insights", {
-      userId,
-      type: "tip",
-      message: "You're on track to reach your laptop goal in 4 months.",
-      date: new Date().toISOString().split('T')[0],
-    });
-
-    // Add sample budgets
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    const sampleBudgets = [
-      { category: "Food", limit: 8000, spent: 1200 },
-      { category: "Travel", limit: 3000, spent: 800 },
-      { category: "Shopping", limit: 5000, spent: 2500 },
-      { category: "Bills", limit: 4000, spent: 1500 },
-    ];
-
-    for (const budget of sampleBudgets) {
-      await ctx.db.insert("budgets", {
-        userId,
-        ...budget,
-        month: currentMonth,
-      });
-    }
+    return Object.entries(breakdown).map(([category, amount]) => ({
+      category,
+      amount,
+      percentage: 0, // Will be calculated on frontend
+    }));
   },
 });

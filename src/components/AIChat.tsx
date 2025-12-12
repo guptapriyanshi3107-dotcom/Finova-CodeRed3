@@ -1,51 +1,73 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import type { AIMessage, UserFinancialContext, ChatAPIRequest, AIResponse } from "../ai/aiTypes";
 
-// Backend API URL - Update this to match your backend server
-const BACKEND_URL = 'http://localhost:5000';
+interface Message {
+  id: string;
+  text: string;
+  sender: 'user' | 'ai';
+  timestamp: number;
+}
+
+const OLLAMA_URL = 'http://localhost:11434/api/generate';
+const MODEL_NAME = 'granite3.2:2b'; // Using your installed Granite model
 
 export function AIChat() {
-  const [messages, setMessages] = useState<AIMessage[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: "👋 Hi! I'm FinPal, your AI financial assistant powered by IBM Granite. I'm here to help you with budgeting, saving, investing, and all your money questions. What would you like to know?",
+  const [messages, setMessages] = useState<Message[]>([
+    { 
+      id: '1', 
+      text: "Hello! I'm FinPal, your AI financial advisor powered by IBM Granite. How can I help you today?", 
+      sender: 'ai',
       timestamp: Date.now()
     }
   ]);
   const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isBackendOnline, setIsBackendOnline] = useState(false);
+  const [isOllamaOnline, setIsOllamaOnline] = useState(false);
+  const [ollamaError, setOllamaError] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Get user's financial context for personalized advice
+  // Get user data for context
+  const userProfile = useQuery(api.dashboard.getUserProfile);
   const userStats = useQuery(api.dashboard.getDashboardStats);
-  const userGoals = useQuery(api.dashboard.getUserGoals);
+  const userGoals = useQuery(api.dashboard.getGoals);
   const recentTransactions = useQuery(api.dashboard.getRecentTransactions);
 
-  // Check backend health on mount and periodically
+  // Check Ollama health
   useEffect(() => {
-    checkBackendHealth();
-    const interval = setInterval(checkBackendHealth, 30000); // Check every 30s
+    checkOllamaHealth();
+    const interval = setInterval(checkOllamaHealth, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  const checkBackendHealth = async () => {
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const checkOllamaHealth = async () => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/health`, {
-        method: 'GET',
+      const response = await fetch(OLLAMA_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: MODEL_NAME,
+          prompt: 'Hello',
+          stream: false,
+          options: { max_tokens: 5 }
+        })
       });
-      const data = await response.json();
-      setIsBackendOnline(data.status === 'ok');
       
-      if (data.status === 'warning') {
-        console.warn('Backend warning:', data.message);
+      if (response.ok) {
+        setIsOllamaOnline(true);
+        setOllamaError("");
+      } else {
+        const errorText = await response.text();
+        setIsOllamaOnline(false);
+        setOllamaError(`HTTP ${response.status}: ${errorText}`);
       }
-    } catch (error) {
-      setIsBackendOnline(false);
-      console.error('Backend health check failed:', error);
+    } catch (error: any) {
+      setIsOllamaOnline(false);
+      setOllamaError('Ollama not running. Start with: ollama serve');
     }
   };
 
@@ -53,54 +75,44 @@ export function AIChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+  const buildUserContext = () => {
+    if (!userStats) return "";
 
-  // Build user financial context
-  const buildUserContext = (): UserFinancialContext | undefined => {
-    if (!userStats) return undefined;
+    let context = `User's Financial Profile:
+- Monthly Income: ₹${userStats.monthlyIncome}
+- Monthly Expenses: ₹${userStats.monthlyExpenses}
+- Total Savings: ₹${userStats.totalSavings}
+- Financial Score: ${userProfile?.financialScore || userStats.financialScore}/100`;
 
-    const context: UserFinancialContext = {
-      monthlyIncome: userStats.monthlyIncome,
-      monthlyExpenses: userStats.monthlyExpenses,
-      savings: userStats.savings,
-      financialScore: userStats.financialScore,
-    };
-
-    // Add goals if available
     if (userGoals && userGoals.length > 0) {
-      context.goals = userGoals.map(goal => ({
-        name: goal.name,
-        targetAmount: goal.targetAmount,
-        savedAmount: goal.savedAmount,
-      }));
+      context += `\n\nFinancial Goals:`;
+      userGoals.slice(0, 3).forEach(g => {
+        context += `\n- ${g.name}: ₹${g.savedAmount}/${g.targetAmount}`;
+      });
     }
 
-    // Add recent transactions if available
     if (recentTransactions && recentTransactions.length > 0) {
-      context.recentTransactions = recentTransactions.slice(0, 10).map(txn => ({
-        type: txn.type as 'income' | 'expense',
-        amount: txn.amount,
-        category: txn.category,
-      }));
+      context += `\n\nRecent Transactions:`;
+      recentTransactions.slice(0, 3).forEach(t => {
+        context += `\n- ${t.category}: ₹${t.amount} (${t.type})`;
+      });
     }
 
     return context;
   };
 
-  const handleSendMessage = async (message: string) => {
-    if (!message.trim() || isLoading) return;
+  const handleSendMessage = async () => {
+    if (!inputMessage.trim() || isLoading) return;
 
-    if (!isBackendOnline) {
-      alert('AI Backend is offline. Please check:\n\n1. Flask server is running: python server.py\n2. Backend URL is correct: ' + BACKEND_URL);
+    if (!isOllamaOnline) {
+      alert(`Ollama AI is offline.\n\n${ollamaError}\n\nSteps:\n1. Open terminal\n2. Run: ollama serve\n3. Model granite3.2:2b is already installed ✓`);
       return;
     }
 
-    const userMessage: AIMessage = {
+    const userMessage: Message = {
       id: Date.now().toString(),
-      role: 'user',
-      content: message,
+      text: inputMessage,
+      sender: 'user',
       timestamp: Date.now()
     };
 
@@ -109,169 +121,156 @@ export function AIChat() {
     setIsLoading(true);
 
     try {
-      // Build request with full context
-      const requestBody: ChatAPIRequest = {
-        message: message,
-        history: messages.slice(-10).map(m => ({
-          role: m.role,
-          content: m.content
-        })),
-        context: buildUserContext()
-      };
+      const userContext = buildUserContext();
+      
+      const conversationHistory = messages.slice(-6).map(m => 
+        `${m.sender === 'user' ? 'User' : 'FinPal'}: ${m.text}`
+      ).join('\n\n');
 
-      // Call local Ollama backend
-      const response = await fetch(`${BACKEND_URL}/api/chat`, {
+      const prompt = `You are FinPal, an AI financial advisor for Finova. You provide helpful, actionable financial advice in a friendly, conversational tone. Keep responses concise (2-3 sentences).
+
+${userContext ? `\n${userContext}\n` : ''}
+
+${conversationHistory ? `Previous Conversation:\n${conversationHistory}\n\n` : ''}
+
+User: ${inputMessage}
+
+FinPal:`;
+
+      const response = await fetch(OLLAMA_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: MODEL_NAME,
+          prompt: prompt,
+          stream: false,
+          options: {
+            temperature: 0.7,
+            top_p: 0.9,
+            num_predict: 300,
+            stop: ['User:', 'FinPal:']
+          }
+        })
       });
 
-      const data: AIResponse = await response.json();
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Ollama error: ${response.status} - ${errorText}`);
+      }
 
-      if (data.success && data.response) {
-        const assistantMessage: AIMessage = {
+      const data = await response.json();
+
+      if (data.response) {
+        const aiMessage: Message = {
           id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: data.response,
+          text: data.response.trim(),
+          sender: 'ai',
           timestamp: Date.now()
         };
-
-        setMessages(prev => [...prev, assistantMessage]);
+        setMessages(prev => [...prev, aiMessage]);
       } else {
-        throw new Error(data.error || 'Failed to get AI response');
+        throw new Error('No response from Ollama');
       }
-    } catch (error) {
-      console.error('AI Chat Error:', error);
+    } catch (error: any) {
+      console.error('Ollama Error:', error);
       
-      const errorMessage: AIMessage = {
+      const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: "I'm sorry, I'm having trouble connecting right now. Please make sure the AI backend is running at " + BACKEND_URL + " and try again!",
+        text: `Sorry, I encountered an error: ${error.message}\n\nMake sure Ollama is running with: ollama serve`,
+        sender: 'ai',
         timestamp: Date.now()
       };
-
       setMessages(prev => [...prev, errorMessage]);
-      setIsBackendOnline(false);
+      checkOllamaHealth();
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    handleSendMessage(inputMessage);
-  };
-
-  const handleSuggestionClick = (suggestion: string) => {
-    handleSendMessage(suggestion);
-  };
-
-  // Contextual suggestions based on user's financial data
-  const getContextualSuggestions = (): string[] => {
-    if (!userStats) {
-      return [
-        "How can I start budgeting?",
-        "Tips for saving money",
-        "What's a good emergency fund?",
-        "How to track expenses?"
-      ];
-    }
-
-    const savingsRate = userStats.monthlyIncome > 0 
-      ? ((userStats.monthlyIncome - userStats.monthlyExpenses) / userStats.monthlyIncome) * 100 
-      : 0;
-    
-    if (savingsRate < 20) {
-      return [
-        "How can I save more money?",
-        "Where am I overspending?",
-        "Tips to reduce expenses",
-        "What's the 50/30/20 rule?"
-      ];
-    } else if (userStats.financialScore < 60) {
-      return [
-        "How to improve my financial score?",
-        "Best investment options for beginners",
-        "Should I create an emergency fund?",
-        "How to set financial goals?"
-      ];
-    } else {
-      return [
-        "Best investment strategies",
-        "How to grow my wealth?",
-        "Tax-saving investment options",
-        "Retirement planning tips"
-      ];
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
     }
   };
 
-  const suggestions = getContextualSuggestions();
+  const quickActions = [
+    "How can I improve my financial score?",
+    "What should I budget for this month?",
+    "Help me plan for my goals",
+    "Analyze my spending patterns"
+  ];
+
+  const handleQuickAction = (action: string) => {
+    setInputMessage(action);
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-2xl font-bold text-gray-800">🤖 Ask FinPal</h2>
-          <div className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full ${isBackendOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-            <span className={`text-sm font-medium ${isBackendOnline ? 'text-green-600' : 'text-red-600'}`}>
-              {isBackendOnline ? 'AI Online' : 'AI Offline'}
-            </span>
-          </div>
-        </div>
-        <p className="text-gray-600">
-          Your AI-powered financial assistant. Ask me anything about budgeting, saving, investing, or managing your money!
-        </p>
-        
-        {!isBackendOnline && (
-          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-800 text-sm">
-              <strong>⚠️ AI Backend Offline:</strong> Make sure the backend server is running:
-              <code className="block mt-2 bg-red-100 p-2 rounded text-xs font-mono">
-                cd backend<br/>
-                python server.py
-              </code>
-              <span className="block mt-2 text-xs">
-                Connecting to: <strong>{BACKEND_URL}</strong>
+    <div className="max-w-4xl mx-auto">
+      <div className="bg-white rounded-xl shadow-sm border">
+        {/* Header */}
+        <div className="border-b border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-r from-teal-500 to-blue-500 rounded-full flex items-center justify-center text-white text-xl">
+                🤖
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">FinPal AI Assistant</h1>
+                <p className="text-gray-600">Powered by IBM Granite 3.2 (2B Model)</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className={`w-3 h-3 rounded-full ${isOllamaOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+              <span className={`text-sm font-medium ${isOllamaOnline ? 'text-green-600' : 'text-red-600'}`}>
+                {isOllamaOnline ? 'Online' : 'Offline'}
               </span>
-            </p>
+            </div>
           </div>
-        )}
-        
-        {isBackendOnline && userStats && (
-          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-blue-800 text-sm">
-              <strong>💡 Personalized Advice:</strong> I can see your financial data 
-              (Income: ₹{userStats.monthlyIncome.toLocaleString()}, 
-              Score: {userStats.financialScore}/100) and provide tailored recommendations!
-            </p>
-          </div>
-        )}
-      </div>
 
-      {/* Chat Container */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[600px]">
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          {!isOllamaOnline && (
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-800 text-sm font-semibold mb-2">⚠️ Ollama AI Offline</p>
+              <p className="text-red-700 text-sm mb-2">{ollamaError}</p>
+              <div className="bg-red-100 p-2 rounded text-xs font-mono space-y-1">
+                <div>✓ Model granite3.2:2b already installed</div>
+                <div>✗ Ollama service not responding</div>
+                <div className="mt-2">Check if Ollama is running in Task Manager</div>
+              </div>
+              <button
+                onClick={checkOllamaHealth}
+                className="mt-2 px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+              >
+                🔄 Retry Connection
+              </button>
+            </div>
+          )}
+
+          {isOllamaOnline && userStats && (
+            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-green-800 text-sm">
+                <strong>✅ Connected!</strong> Using your financial data (Income: ₹{userStats.monthlyIncome.toLocaleString()}) for personalized advice
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Chat Messages */}
+        <div className="h-96 overflow-y-auto p-6 space-y-4">
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[80%] p-4 rounded-lg ${
-                  message.role === 'user'
+                className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${
+                  message.sender === 'user'
                     ? 'bg-teal-600 text-white'
-                    : 'bg-gray-100 text-gray-800'
+                    : 'bg-gray-100 text-gray-900'
                 }`}
               >
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                <p className={`text-xs mt-2 ${
-                  message.role === 'user' ? 'text-teal-100' : 'text-gray-500'
-                }`}>
+                <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                <p className={`text-xs mt-2 ${message.sender === 'user' ? 'text-teal-100' : 'text-gray-500'}`}>
                   {new Date(message.timestamp).toLocaleTimeString()}
                 </p>
               </div>
@@ -280,10 +279,10 @@ export function AIChat() {
           
           {isLoading && (
             <div className="flex justify-start">
-              <div className="bg-gray-100 text-gray-800 p-4 rounded-lg">
-                <div className="flex items-center space-x-2">
+              <div className="bg-gray-100 text-gray-900 max-w-xs lg:max-w-md px-4 py-2 rounded-lg">
+                <div className="flex items-center gap-2">
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-teal-600"></div>
-                  <p className="text-sm">FinPal is thinking...</p>
+                  <span className="text-sm">FinPal is thinking...</span>
                 </div>
               </div>
             </div>
@@ -292,68 +291,66 @@ export function AIChat() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Quick Suggestions */}
-        {messages.length <= 2 && isBackendOnline && (
-          <div className="px-6 py-3 border-t border-gray-200">
-            <p className="text-sm text-gray-600 mb-3">💡 Try asking:</p>
+        {/* Quick Actions */}
+        {isOllamaOnline && (
+          <div className="border-t border-gray-200 p-4">
+            <p className="text-sm text-gray-600 mb-3">Quick actions:</p>
             <div className="flex flex-wrap gap-2">
-              {suggestions.map((suggestion, index) => (
+              {quickActions.map((action, index) => (
                 <button
                   key={index}
-                  onClick={() => handleSuggestionClick(suggestion)}
-                  className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm hover:bg-gray-200 transition-colors"
+                  onClick={() => handleQuickAction(action)}
+                  className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-full text-gray-700 transition-colors"
                   disabled={isLoading}
                 >
-                  {suggestion}
+                  {action}
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        {/* Input Form */}
-        <div className="p-6 border-t border-gray-200">
-          <form onSubmit={handleSubmit} className="flex gap-3">
-            <input
-              type="text"
+        {/* Input Area */}
+        <div className="border-t border-gray-200 p-4">
+          <div className="flex gap-3">
+            <textarea
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
-              placeholder={isBackendOnline ? "Ask me about your finances..." : "Start backend to enable AI chat..."}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 disabled:bg-gray-100"
-              disabled={isLoading || !isBackendOnline}
+              onKeyPress={handleKeyPress}
+              placeholder={isOllamaOnline ? "Ask FinPal anything about your finances..." : "Waiting for Ollama..."}
+              className="flex-1 resize-none border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 disabled:bg-gray-100"
+              rows={2}
+              disabled={isLoading || !isOllamaOnline}
             />
             <button
-              type="submit"
-              disabled={!inputMessage.trim() || isLoading || !isBackendOnline}
-              className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              onClick={handleSendMessage}
+              disabled={!inputMessage.trim() || isLoading || !isOllamaOnline}
+              className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
             >
-              {isLoading ? '...' : 'Send'}
+              {isLoading ? '⏳' : 'Send'}
             </button>
-          </form>
+          </div>
         </div>
       </div>
 
-      {/* AI Status */}
-      <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl p-6 border border-purple-200">
+      {/* Info Card */}
+      <div className="mt-6 bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl p-6 border border-purple-200">
         <div className="flex items-center gap-3 mb-4">
           <span className="text-2xl">🧠</span>
-          <h3 className="text-xl font-semibold text-purple-800">Powered by IBM Granite 3.2-2B</h3>
+          <h3 className="text-xl font-semibold text-purple-800">Powered by IBM Granite AI</h3>
         </div>
-        <p className="text-purple-700 mb-4">
-          FinPal uses IBM Granite AI running locally on your computer for fast, private, and personalized financial advice based on your Finova data.
-        </p>
         <div className="grid md:grid-cols-3 gap-4">
           <div className="bg-white rounded-lg p-4">
             <h4 className="font-medium text-purple-800 mb-2">🎯 Personalized</h4>
-            <p className="text-sm text-purple-700">Advice tailored to your financial situation and goals</p>
+            <p className="text-sm text-purple-700">Uses your actual Finova data for tailored advice</p>
           </div>
           <div className="bg-white rounded-lg p-4">
-            <h4 className="font-medium text-purple-800 mb-2">🔒 100% Private</h4>
+            <h4 className="font-medium text-purple-800 mb-2">🔒 Private</h4>
             <p className="text-sm text-purple-700">Runs locally - your data never leaves your computer</p>
           </div>
           <div className="bg-white rounded-lg p-4">
-            <h4 className="font-medium text-purple-800 mb-2">⚡ Fast & Smart</h4>
-            <p className="text-sm text-purple-700">Local processing with context-aware responses</p>
+            <h4 className="font-medium text-purple-800 mb-2">⚡ Fast</h4>
+            <p className="text-sm text-purple-700">Local processing means instant responses</p>
           </div>
         </div>
       </div>

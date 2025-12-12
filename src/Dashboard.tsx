@@ -1,30 +1,21 @@
-import { useQuery, useMutation } from "convex/react";
+import { useState } from "react";
+import { useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar";
-import { StatsCards } from "./components/StatsCards";
-import { QuickActions } from "./components/QuickActions";
-import { PersonalizedInsights } from "./components/PersonalizedInsights";
-import { GoalsProgress } from "./components/GoalsProgress";
-import { SpendingBreakdown } from "./components/SpendingBreakdown";
-import { AITip } from "./components/AITip";
-import { RecentTransactions } from "./components/RecentTransactions";
 import { PageManager } from "./components/PageManager";
+import { StatsCards } from "./components/StatsCards";
+import { SurvivalScoreCard } from "./components/SurvivalScoreCard";
+import { FinancialCertificate } from "./components/FinancialCertificate";
+import { RecentTransactions } from "./components/RecentTransactions";
+import { PersonalizedInsights } from "./components/PersonalizedInsights";
 
 export function Dashboard() {
-  const userProfile = useQuery(api.dashboard.getUserProfile);
-  const initializeSampleData = useMutation(api.dashboard.initializeSampleData);
-  const [isInitialized, setIsInitialized] = useState(false);
   const [activePage, setActivePage] = useState("Overview");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  useEffect(() => {
-    if (userProfile === null && !isInitialized) {
-      initializeSampleData();
-      setIsInitialized(true);
-    }
-  }, [userProfile, initializeSampleData, isInitialized]);
+  const profile = useQuery(api.dashboard.getUserProfile);
 
-  if (userProfile === undefined) {
+  if (!profile) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
@@ -32,96 +23,76 @@ export function Dashboard() {
     );
   }
 
-  if (userProfile === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Setting up your dashboard...</p>
-        </div>
+  const renderDashboardContent = () => (
+    <div className="space-y-8">
+      {/* Welcome Message */}
+      <div className="bg-gradient-to-r from-teal-600 to-blue-600 rounded-xl p-6 text-white">
+        <h1 className="text-2xl font-bold mb-2">Welcome back, {profile.name}! 👋</h1>
+        <p className="text-teal-100">
+          Here's your financial overview for today. Keep up the great work!
+        </p>
       </div>
-    );
-  }
 
-  const renderMainContent = () => {
-    if (activePage === "Overview") {
-      return (
-        <>
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              Welcome back, {userProfile.name}! 👋
-            </h1>
-            <p className="text-gray-600">
-              Your financial overview is ready — Smart decisions. Simple money. Future ready.
-            </p>
-          </div>
+      {/* Stats Cards */}
+      <StatsCards />
 
-          {/* Stats Cards */}
-          <StatsCards />
+      {/* Survival Analysis */}
+      <SurvivalScoreCard />
 
-          {/* Quick Actions */}
-          <QuickActions />
+      {/* Financial Certificate */}
+      <FinancialCertificate />
 
-          {/* Main Content Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-            <PersonalizedInsights />
-            <GoalsProgress />
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-            <SpendingBreakdown />
-            <RecentTransactions />
-          </div>
-
-          {/* AI Tip */}
-          <AITip />
-
-          {/* Footer */}
-          <footer className="mt-12 text-center text-gray-500">
-            © 2025 Finova – Finance & Innovation. Powered by AI.
-          </footer>
-        </>
-      );
-    }
-
-    return (
-      <>
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            {activePage}
-          </h1>
-          <p className="text-gray-600">
-            {getPageDescription(activePage)}
-          </p>
-        </div>
-        <PageManager activePage={activePage} />
-      </>
-    );
-  };
-
-  const getPageDescription = (page: string) => {
-    const descriptions: Record<string, string> = {
-      "Ask FinPal": "Get personalized financial advice from your AI assistant",
-      "Budget Planner": "Create and manage your monthly budgets",
-      "Expense Tracker": "Track your income and expenses",
-      "Financial Goals": "Set and monitor your savings goals",
-      "Smart Suggestions": "AI-powered recommendations to optimize your finances",
-      "Insights & Reports": "Detailed analysis of your financial data",
-      "Learn & Grow": "Educational content to improve your financial literacy",
-      "Settings": "Manage your account and preferences"
-    };
-    return descriptions[page] || "";
-  };
+      {/* Recent Activity & Insights */}
+      <div className="grid lg:grid-cols-2 gap-8">
+        <RecentTransactions />
+        <PersonalizedInsights />
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      <Sidebar activePage={activePage} onPageChange={setActivePage} />
-      <main className="flex-1 ml-64">
-        <div className="p-8">
-          {renderMainContent()}
+    <div className="flex h-screen bg-gray-50">
+      {/* Sidebar */}
+      <Sidebar 
+        activePage={activePage} 
+        setActivePage={setActivePage}
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
+      />
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Mobile Header */}
+        <div className="lg:hidden bg-white shadow-sm border-b border-gray-200 px-4 py-3">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="text-gray-600 hover:text-gray-900"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
         </div>
-      </main>
+
+        {/* Page Content */}
+        <div className="flex-1 overflow-auto">
+          <div className="p-6">
+            {activePage === "Overview" ? (
+              renderDashboardContent()
+            ) : (
+              <PageManager activePage={activePage} />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
     </div>
   );
 }

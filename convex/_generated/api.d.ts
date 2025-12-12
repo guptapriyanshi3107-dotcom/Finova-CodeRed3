@@ -17,6 +17,7 @@ import type * as ai from "../ai.js";
 import type * as auth from "../auth.js";
 import type * as dashboard from "../dashboard.js";
 import type * as http from "../http.js";
+import type * as questionnaire from "../questionnaire.js";
 import type * as router from "../router.js";
 
 /**
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   dashboard: typeof dashboard;
   http: typeof http;
+  questionnaire: typeof questionnaire;
   router: typeof router;
 }>;
 export declare const api: FilterApi<

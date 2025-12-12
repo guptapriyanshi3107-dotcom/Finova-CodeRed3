@@ -2,7 +2,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
 export function GoalsProgress() {
-  const goals = useQuery(api.dashboard.getUserGoals);
+  const goals = useQuery(api.dashboard.getGoals);
 
   if (!goals) {
     return (
