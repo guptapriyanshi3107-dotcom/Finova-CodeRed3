@@ -16,7 +16,7 @@ export function AIChat() {
   const [messages, setMessages] = useState<Message[]>([
     { 
       id: '1', 
-      text: "Hello! I'm FinPal, your AI financial advisor powered by IBM Granite. How can I help you today?", 
+      text: "Hi there! What would you like to explore about your finances today?", 
       sender: 'ai',
       timestamp: Date.now()
     }
@@ -195,10 +195,11 @@ FinPal:`;
   };
 
   const quickActions = [
-    "How can I improve my financial score?",
-    "What should I budget for this month?",
-    "Help me plan for my goals",
-    "Analyze my spending patterns"
+    "Improve my credit score",
+    "Create a budget for this month",
+    "Plan my savings goals",
+    "Optimize my monthly expenses",
+    "Analyze my spending habits"
   ];
 
   const handleQuickAction = (action: string) => {
@@ -216,8 +217,8 @@ FinPal:`;
                 🤖
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">FinPal AI Assistant</h1>
-                <p className="text-gray-600">Powered by IBM Granite 3.2 (2B Model)</p>
+                <h1 className="text-2xl font-bold text-gray-900">FinPal – Your Financial Assistant</h1>
+                <p className="text-gray-600">Powered by Granite AI</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -337,7 +338,7 @@ FinPal:`;
       <div className="mt-6 bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl p-6 border border-purple-200">
         <div className="flex items-center gap-3 mb-4">
           <span className="text-2xl">🧠</span>
-          <h3 className="text-xl font-semibold text-purple-800">Powered by IBM Granite AI</h3>
+          <h3 className="text-xl font-semibold text-purple-800">Financial Guidance, Simplified</h3>
         </div>
         <div className="grid md:grid-cols-3 gap-4">
           <div className="bg-white rounded-lg p-4">
