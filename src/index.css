@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom font class for Finova branding */
+.font-finova {
+  font-family: "Lobster Two", cursive;
+}
+
+/* Sidebar scrolling fix */
+.sidebar-scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #14b8a6 #f1f5f9;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: #14b8a6;
+  border-radius: 3px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: #0f766e;
+}
+
+/* Auth form styling */
+.auth-input-field {
+  @apply w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-colors;
+}
+
+.auth-button {
+  @apply w-full px-4 py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.auth-button-secondary {
+  @apply w-full px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors border border-gray-300;
+}
+
+.gap-form-field {
+  @apply gap-4;
+}
+
+.text-primary {
+  @apply text-teal-600;
+}
+
+.text-primary-hover {
+  @apply text-teal-700;
+}
+
+.text-secondary {
+  @apply text-gray-600;
+}
